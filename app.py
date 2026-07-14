@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os, json, time, uuid, threading
 from datetime import datetime, timezone
 import requests
@@ -13,12 +14,12 @@ TG = f"https://api.telegram.org/bot{TOKEN}"
 JOURNAL = "journal.jsonl"
 ARMFILE = "armed.flag"
 
-# â”€â”€ readiness gate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── readiness gate ────────────────────────────────────────────────
 GATE_TRADES = 20
 GATE_CLEAN_WINDOW = 10
 GATE_WINRATE = 50.0
 
-# â”€â”€ execution config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── execution config ──────────────────────────────────────────────
 EXECUTION_DRIVER = os.environ.get("EXECUTION_DRIVER", "none").lower()
 RISK_PCT = float(os.environ.get("RISK_PCT", "0.3"))
 ACCOUNT_BALANCE = float(os.environ.get("ACCOUNT_BALANCE", "50000"))
@@ -40,13 +41,13 @@ def now_iso():
 
 def jwrite(rec):
     rec["logged_at"] = now_iso()
-    with open(JOURNAL, "a") as f:
+    with open(JOURNAL, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec) + "\n")
 
 def jread():
     rows = []
     try:
-        with open(JOURNAL) as f:
+        with open(JOURNAL, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -104,8 +105,8 @@ def fetch_chart_png():
 
 def ticket(s):
     side = str(s.get("side", "?")).upper()
-    icon = "ðŸŸ¢" if side == "LONG" else "ðŸ”´"
-    return (f"{icon} <b>TAKE IT â€” {side} {s.get('symbol','')}</b>\n"
+    icon = "🟢" if side == "LONG" else "🔴"
+    return (f"{icon} <b>TAKE IT - {side} {s.get('symbol','')}</b>\n"
             f"Session: {s.get('session','?')}\n"
             f"Entry: <code>{s.get('entry','?')}</code>  SL: <code>{s.get('sl','?')}</code>  "
             f"TP: <code>{s.get('tp','?')}</code>\nR:R: <code>{s.get('rr','?')}</code>\n"
@@ -116,8 +117,8 @@ def send_signal(s):
     s["sid"] = sid
     s["signal_time"] = now_iso()
     kb = {"inline_keyboard": [[
-        {"text": "âœ… TAKE", "callback_data": f"take:{sid}"},
-        {"text": "âŒ SKIP", "callback_data": f"skip:{sid}"}]]}
+        {"text": "✅ TAKE", "callback_data": f"take:{sid}"},
+        {"text": "❌ SKIP", "callback_data": f"skip:{sid}"}]]}
     text = ticket(s)
     png = fetch_chart_png()
     mid = None
@@ -141,7 +142,7 @@ def find_signal(sid):
             return r
     return None
 
-# â”€â”€ stats / gate engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── stats / gate engine ───────────────────────────────────────────
 def build_stats():
     rows = jread()
     sig, dec, outc, proc = {}, {}, {}, {}
@@ -208,24 +209,24 @@ def exec_status():
     if not st["gate_ok"]:
         return f"LOCKED (gate {st['completed']}/{GATE_TRADES})", False, st
     if not is_armed():
-        return "READY (gate met â€” /arm to go live)", False, st
+        return "READY (gate met - /arm to go live)", False, st
     return f"LIVE via {EXECUTION_DRIVER}", True, st
 
 def stats_text():
     st = build_stats()
     estr, _, _ = exec_status()
-    gate = "âœ… GATE MET" if st["gate_ok"] else (
-        f"{st['completed']}/{GATE_TRADES} trades Â· "
-        f"{st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} Â· "
+    gate = "✅ GATE MET" if st["gate_ok"] else (
+        f"{st['completed']}/{GATE_TRADES} trades | "
+        f"{st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} | "
         f"WR {st['wr']}% vs {GATE_WINRATE}%")
     stk = f"{abs(st['streak'])}{'W' if st['streak']>0 else 'L'}" if st["streak"] else "-"
-    return (f"ðŸ“Š <b>Journal</b>\n"
+    return (f"📊 <b>Journal</b>\n"
             f"Record: {st['wins']}W-{st['losses']}L-{st['be']}BE (WR {st['wr']}%)\n"
-            f"Net: {st['totR']:+.2f}R Â· Streak: {stk}\n"
-            f"Signals {st['signals']} Â· Skips {st['skips']} Â· Ungraded {st['ungraded']}\n"
+            f"Net: {st['totR']:+.2f}R | Streak: {stk}\n"
+            f"Signals {st['signals']} | Skips {st['skips']} | Ungraded {st['ungraded']}\n"
             f"Gate: {gate}\nExecution: {estr}")
 
-# â”€â”€ execution engine (Phase 3, triple-locked) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── execution engine (Phase 3, triple-locked) ─────────────────────
 def calc_lots(entry, sl):
     dist = abs(float(entry) - float(sl))
     if dist <= 0:
@@ -260,12 +261,12 @@ def execute_trade(s):
     if not live:
         jwrite({"type": "execution", "sid": s.get("sid"), "executed": False,
                 "reason": estr})
-        return f"ðŸ““ Journal-only ({estr})"
+        return f"📓 Journal-only ({estr})"
     lots = calc_lots(entry, sl)
     if lots <= 0:
         jwrite({"type": "execution", "sid": s.get("sid"), "executed": False,
                 "reason": "bad lot calc"})
-        return "âš ï¸ Execution skipped â€” bad SL distance"
+        return "⚠️ Execution skipped - bad SL distance"
     try:
         if EXECUTION_DRIVER == "pineconnector":
             res = exec_pineconnector(side, lots, sl, tp)
@@ -276,14 +277,14 @@ def execute_trade(s):
         ok = res.get("status") in (200, 201, 204)
         jwrite({"type": "execution", "sid": s.get("sid"), "executed": ok,
                 "lots": lots, "result": res})
-        return (f"âš¡ ORDER SENT Â· {lots} lots Â· {res.get('driver')}"
-                if ok else f"âŒ Execution failed: {res}")
+        return (f"⚡ ORDER SENT | {lots} lots | {res.get('driver')}"
+                if ok else f"❌ Execution failed: {res}")
     except Exception as e:
         jwrite({"type": "execution", "sid": s.get("sid"), "executed": False,
                 "reason": str(e)})
-        return f"âŒ Execution error: {e}"
+        return f"❌ Execution error: {e}"
 
-# â”€â”€ routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── routes ────────────────────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     if SECRET and request.args.get("secret") != SECRET:
@@ -301,7 +302,7 @@ def export():
     if SECRET and request.args.get("secret") != SECRET:
         return "forbidden", 403
     try:
-        data = open(JOURNAL).read()
+        data = open(JOURNAL, encoding="utf-8").read()
     except FileNotFoundError:
         data = ""
     return Response(data, mimetype="application/jsonl",
@@ -309,7 +310,7 @@ def export():
 
 @app.route("/")
 def health():
-    return "tradingpool bot up â€” dashboard at /dashboard"
+    return "tradingpool bot up - dashboard at /dashboard"
 
 @app.route("/dashboard")
 def dashboard():
@@ -317,15 +318,15 @@ def dashboard():
     estr, live, _ = exec_status()
     pct = min(100, int(100 * st["completed"] / GATE_TRADES))
     gcol = "#3ddc84" if st["gate_ok"] else "#ffb24d"
-    gtxt = "GATE MET â€” eligible to arm execution" if st["gate_ok"] else \
-        f"{st['completed']}/{GATE_TRADES} completed Â· {st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} Â· need WR>{GATE_WINRATE}%"
+    gtxt = "GATE MET - eligible to arm execution" if st["gate_ok"] else \
+        f"{st['completed']}/{GATE_TRADES} completed | {st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} | need WR>{GATE_WINRATE}%"
     ecol = "#3ddc84" if live else "#ffb24d"
-    stk = f"{abs(st['streak'])}{'W' if st['streak']>0 else 'L'}" if st["streak"] else "â€”"
+    stk = f"{abs(st['streak'])}{'W' if st['streak']>0 else 'L'}" if st["streak"] else "-"
     rows = ""
     for t in reversed(st["trades"][-30:]):
         res = t["result"] or "open"
         rc = {"win": "#3ddc84", "loss": "#ef5350", "be": "#ffb24d"}.get(res, "#5a6862")
-        cl = "â€”" if t["clean"] is None else ("clean" if t["clean"] else "BREACH")
+        cl = "-" if t["clean"] is None else ("clean" if t["clean"] else "BREACH")
         cc = "#5a6862" if t["clean"] is None else ("#3ddc84" if t["clean"] else "#ef5350")
         rl = "" if t["realized"] is None else f"{t['realized']:+.2f}R"
         rows += (f"<tr><td>{t['time'][:16].replace('T',' ')}</td>"
@@ -347,7 +348,7 @@ th{{color:#5a6862;font-size:10px;letter-spacing:.1em;text-transform:uppercase}}
 </style></head><body>
 <div class=card><div class=k>Funded readiness gate</div>
 <div style="color:{gcol};font-size:14px">{gtxt}</div><div class=bar><div class=fill></div></div></div>
-<div class=card><div class=k>Execution</div><div style="color:{ecol};font-size:14px">{estr} Â· risk {RISK_PCT}% on ${int(ACCOUNT_BALANCE)}</div></div>
+<div class=card><div class=k>Execution</div><div style="color:{ecol};font-size:14px">{estr} | risk {RISK_PCT}% on ${int(ACCOUNT_BALANCE)}</div></div>
 <div class=grid>
 <div class=card><div class=k>Record</div><div class=v>{st['wins']}W-{st['losses']}L-{st['be']}BE</div></div>
 <div class=card><div class=k>Win rate</div><div class=v style="color:{'#3ddc84' if st['wr']>GATE_WINRATE else '#ffb24d'}">{st['wr']}%</div></div>
@@ -358,12 +359,12 @@ th{{color:#5a6862;font-size:10px;letter-spacing:.1em;text-transform:uppercase}}
 </div>
 <div class=card><div class=k>Last 30 trades</div>
 <table><tr><th>time (utc)</th><th>side</th><th>session</th><th>result</th><th>R</th><th>process</th></tr>{rows}</table></div>
-<div class=card style="color:#5a6862;font-size:11px">journal is ephemeral on free hosting â€” download via /export?secret=... Â·
+<div class=card style="color:#5a6862;font-size:11px">journal is ephemeral on free hosting - download via /export?secret=... |
 telegram: /stats /arm /disarm</div>
 </body></html>"""
     return html
 
-# â”€â”€ telegram callbacks + commands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── telegram callbacks + commands ─────────────────────────────────
 def handle_callback(cb):
     data = cb.get("data", "")
     tg("answerCallbackQuery", {"callback_query_id": cb.get("id")})
@@ -386,31 +387,31 @@ def handle_callback(cb):
         jwrite({"type": "decision", "sid": sid, "decision": action,
                 "latency_sec": latency, "signal": s})
         if action == "skip":
-            tg_send(f"âŒ Skipped Â· logged ({latency}s)\n\n{stats_text()}")
+            tg_send(f"❌ Skipped | logged ({latency}s)\n\n{stats_text()}")
             return
         exec_msg = execute_trade(s)
         with state_lock:
             opened[sid] = s
         kb = {"inline_keyboard": [[
-            {"text": "ðŸŽ¯ WIN", "callback_data": f"win:{sid}"},
-            {"text": "ðŸ›‘ LOSS", "callback_data": f"loss:{sid}"},
-            {"text": "âž– BE", "callback_data": f"be:{sid}"}]]}
-        tg_send(f"âœ… Taken Â· logged ({latency}s)\n{exec_msg}\n"
+            {"text": "🎯 WIN", "callback_data": f"win:{sid}"},
+            {"text": "🛑 LOSS", "callback_data": f"loss:{sid}"},
+            {"text": "➖ BE", "callback_data": f"be:{sid}"}]]}
+        tg_send(f"✅ Taken | logged ({latency}s)\n{exec_msg}\n"
                 f"When the trade closes, record the outcome:", kb)
     elif action in ("win", "loss", "be"):
         jwrite({"type": "outcome", "sid": sid, "result": action})
         kb = {"inline_keyboard": [[
-            {"text": "âœ… CLEAN", "callback_data": f"clean:{sid}"},
-            {"text": "âš ï¸ BREACH", "callback_data": f"breach:{sid}"}]]}
+            {"text": "✅ CLEAN", "callback_data": f"clean:{sid}"},
+            {"text": "⚠️ BREACH", "callback_data": f"breach:{sid}"}]]}
         tg_send(f"Outcome logged: <b>{action.upper()}</b>\n"
-                f"Process check â€” every non-negotiable followed "
+                f"Process check - every non-negotiable followed "
                 f"(entry on close, SL placement, 3SL, BE-only management)?", kb)
     elif action in ("clean", "breach"):
         jwrite({"type": "process", "sid": sid, "clean": action == "clean"})
         with state_lock:
             opened.pop(sid, None)
         note = "" if action == "clean" else \
-            "\nâš ï¸ Breach logged â€” the clean window resets. Name it in your notes."
+            "\n⚠️ Breach logged - the clean window resets. Name it in your notes."
         tg_send(f"Process: <b>{action.upper()}</b>{note}\n\n{stats_text()}")
 
 def handle_message(msg):
@@ -422,18 +423,18 @@ def handle_message(msg):
         if EXECUTION_DRIVER == "none":
             tg_send("Cannot arm: EXECUTION_DRIVER is 'none'. Set it in env first.")
         elif not st["gate_ok"]:
-            tg_send(f"ðŸ”’ Cannot arm â€” gate not met.\n"
-                    f"{st['completed']}/{GATE_TRADES} trades Â· "
-                    f"{st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} Â· "
-                    f"WR {st['wr']}% (need >{GATE_WINRATE}%) Â· "
+            tg_send(f"🔒 Cannot arm - gate not met.\n"
+                    f"{st['completed']}/{GATE_TRADES} trades | "
+                    f"{st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} | "
+                    f"WR {st['wr']}% (need >{GATE_WINRATE}%) | "
                     f"ungraded {st['ungraded']}.\nThe gate is the system. Keep going.")
         else:
             set_armed(True)
-            tg_send(f"âš¡ ARMED â€” live execution via {EXECUTION_DRIVER}, "
+            tg_send(f"⚡ ARMED - live execution via {EXECUTION_DRIVER}, "
                     f"{RISK_PCT}% risk. /disarm to stop.")
     elif txt == "/disarm":
         set_armed(False)
-        tg_send("ðŸ”’ Disarmed â€” back to journal-only.")
+        tg_send("🔒 Disarmed - back to journal-only.")
 
 def poll_loop():
     offset = 0
