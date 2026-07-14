@@ -440,7 +440,9 @@ def poll_loop():
     while True:
         try:
             r = requests.get(f"{TG}/getUpdates",
-                             params={"offset": offset, "timeout": 30}, timeout=40)
+                             params={"offset": offset, "timeout": 30,
+                                     "allowed_updates": json.dumps(["message", "callback_query"])},
+                             timeout=40)
             for upd in r.json().get("result", []):
                 offset = upd["update_id"] + 1
                 if "callback_query" in upd:
