@@ -10,9 +10,6 @@ SECRET = os.environ.get("WEBHOOK_SECRET", "")
 CHART_KEY = os.environ.get("CHART_IMG_KEY", "").strip()
 CHART_SYMBOL = os.environ.get("CHART_SYMBOL", "OANDA:XAUUSD")
 CHART_INTERVAL = os.environ.get("CHART_INTERVAL", "5m")
-CHART_LAYOUT_ID = os.environ.get("CHART_LAYOUT_ID", "").strip()
-TV_SESSION_ID = os.environ.get("TV_SESSION_ID", "").strip()
-TV_SESSION_ID_SIGN = os.environ.get("TV_SESSION_ID_SIGN", "").strip()
 TG = f"https://api.telegram.org/bot{TOKEN}"
 JOURNAL = "journal.jsonl"
 ARMFILE = "armed.flag"
@@ -92,35 +89,10 @@ def tg_send(text, keyboard=None):
         return r.json().get("result", {}).get("message_id")
     return None
 
-def fetch_layout_chart():
-    """Snapshot a saved TradingView layout (includes custom Pine indicators)."""
-    url = f"https://api.chart-img.com/v2/tradingview/layout-chart/{CHART_LAYOUT_ID}"
-    headers = {"x-api-key": CHART_KEY, "content-type": "application/json"}
-    if TV_SESSION_ID and TV_SESSION_ID_SIGN:
-        headers["tradingview-session-id"] = TV_SESSION_ID
-        headers["tradingview-session-id-sign"] = TV_SESSION_ID_SIGN
-    body = {"symbol": CHART_SYMBOL, "interval": CHART_INTERVAL,
-            "width": 800, "height": 500, "format": "png"}
-    try:
-        r = requests.post(url, json=body, headers=headers, timeout=45)
-        ct = r.headers.get("content-type", "")
-        if r.status_code == 200 and r.content[:4] == b"\x89PNG":
-            print(f"layout-chart: ok ({len(r.content)} bytes)", flush=True)
-            return r.content
-        print("layout-chart error:", r.status_code, ct, r.text[:300], flush=True)
-    except Exception as e:
-        print("layout-chart error:", e, flush=True)
-    return None
-
 def fetch_chart_png():
     if not CHART_KEY:
         print("chart-img: CHART_IMG_KEY not set", flush=True)
         return None
-    if CHART_LAYOUT_ID:
-        png = fetch_layout_chart()
-        if png:
-            return png
-        print("layout-chart failed, falling back to plain chart", flush=True)
     params = {"symbol": CHART_SYMBOL, "interval": CHART_INTERVAL,
               "width": 800, "height": 500, "theme": "dark", "format": "png"}
     attempts = [
