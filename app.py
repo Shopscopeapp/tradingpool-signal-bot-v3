@@ -321,46 +321,228 @@ def dashboard():
     gtxt = "GATE MET - eligible to arm execution" if st["gate_ok"] else \
         f"{st['completed']}/{GATE_TRADES} completed | {st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} | need WR>{GATE_WINRATE}%"
     ecol = "#3ddc84" if live else "#ffb24d"
+    estatus = "LIVE" if live else ("ARMED" if is_armed() and st["gate_ok"] else "LOCKED")
     stk = f"{abs(st['streak'])}{'W' if st['streak']>0 else 'L'}" if st["streak"] else "-"
+    wr_col = "#3ddc84" if st["wr"] > GATE_WINRATE else "#ffb24d"
+    r_col = "#3ddc84" if st["totR"] >= 0 else "#ef5350"
+    u_col = "#ef5350" if st["ungraded"] else "#3ddc84"
     rows = ""
-    for t in reversed(st["trades"][-30:]):
+    for i, t in enumerate(reversed(st["trades"][-30:])):
         res = t["result"] or "open"
         rc = {"win": "#3ddc84", "loss": "#ef5350", "be": "#ffb24d"}.get(res, "#5a6862")
-        cl = "-" if t["clean"] is None else ("clean" if t["clean"] else "BREACH")
-        cc = "#5a6862" if t["clean"] is None else ("#3ddc84" if t["clean"] else "#ef5350")
+        rb = {"win": "badge-win", "loss": "badge-loss", "be": "badge-be"}.get(res, "badge-open")
+        side_cls = "side-long" if str(t["side"]).lower() == "long" else "side-short"
+        cl = "-" if t["clean"] is None else ("CLEAN" if t["clean"] else "BREACH")
+        cc = "badge-muted" if t["clean"] is None else ("badge-clean" if t["clean"] else "badge-breach")
         rl = "" if t["realized"] is None else f"{t['realized']:+.2f}R"
-        rows += (f"<tr><td>{t['time'][:16].replace('T',' ')}</td>"
-                 f"<td>{t['side'].upper()}</td><td>{t['session']}</td>"
-                 f"<td style='color:{rc}'>{res.upper()}</td>"
-                 f"<td>{rl}</td><td style='color:{cc}'>{cl}</td></tr>")
-    html = f"""<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Tradingpool Journal</title><style>
-body{{background:#0a0e0d;color:#c8d3ce;font-family:'SF Mono',ui-monospace,monospace;margin:0;padding:16px}}
-.card{{background:#0f1513;border:1px solid #1c2622;border-radius:2px;padding:14px 16px;margin-bottom:12px}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}}
-.k{{font-size:10px;color:#5a6862;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px}}
-.v{{font-size:22px;font-weight:600}}
-.bar{{height:8px;background:#1c2622;border-radius:4px;overflow:hidden;margin-top:8px}}
-.fill{{height:100%;background:{gcol};width:{pct}%}}
+        delay = f"animation-delay:{i * 0.04}s"
+        rows += (f"<tr class='trade-row' style='{delay}'>"
+                 f"<td class='mono dim'>{t['time'][:16].replace('T',' ')}</td>"
+                 f"<td><span class='side-pill {side_cls}'>{t['side'].upper()}</span></td>"
+                 f"<td><span class='sess'>{t['session']}</span></td>"
+                 f"<td><span class='badge {rb}'>{res.upper()}</span></td>"
+                 f"<td class='mono r-val' style='color:{rc}'>{rl or '-'}</td>"
+                 f"<td><span class='badge {cc}'>{cl}</span></td></tr>")
+    if not rows:
+        rows = "<tr><td colspan='6' class='empty'>No trades yet. Waiting for first signal.</td></tr>"
+    gate_ring = int(283 * pct / 100)
+    html = f"""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tradingpool Journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+:root{{
+  --bg:#060908;--surface:#0c100e;--card:#101614;--border:#1a2420;
+  --text:#d8e4dc;--muted:#5c6e64;--gold:#c9a227;--gold-dim:#8a7020;
+  --green:#2fd67a;--red:#f05252;--amber:#f0a030;--glow:0 0 40px rgba(201,162,39,.08);
+}}
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{
+  font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;overflow-x:hidden;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%,rgba(201,162,39,.12),transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%,rgba(47,214,122,.06),transparent),
+    linear-gradient(rgba(26,36,32,.4) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(26,36,32,.4) 1px,transparent 1px);
+  background-size:auto,auto,48px 48px,48px 48px;
+}}
+.wrap{{max-width:1100px;margin:0 auto;padding:28px 20px 48px}}
+header{{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+  margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid var(--border);
+  animation:rise .6s ease both;
+}}
+.brand{{display:flex;flex-direction:column;gap:4px}}
+.brand h1{{
+  font-size:clamp(1.6rem,4vw,2.2rem);font-weight:700;letter-spacing:.06em;
+  background:linear-gradient(135deg,var(--gold) 0%,#f0d878 50%,var(--gold-dim) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}}
+.brand span{{font-size:11px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase}}
+.live-pill{{
+  display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;
+  font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  border:1px solid var(--border);background:var(--card);
+}}
+.live-pill.on{{border-color:rgba(47,214,122,.4);color:var(--green);box-shadow:0 0 20px rgba(47,214,122,.15)}}
+.live-pill.off{{color:var(--amber)}}
+.live-pill .dot{{width:7px;height:7px;border-radius:50%;background:currentColor}}
+.live-pill.on .dot{{animation:pulse 2s ease infinite}}
+.hero{{
+  display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;
+  animation:rise .6s .1s ease both;
+}}
+@media(max-width:720px){{.hero{{grid-template-columns:1fr}}}}
+.card{{
+  background:linear-gradient(145deg,var(--card),var(--surface));
+  border:1px solid var(--border);border-radius:12px;padding:20px 22px;
+  box-shadow:var(--glow);position:relative;overflow:hidden;
+}}
+.card::before{{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(201,162,39,.35),transparent);
+}}
+.lbl{{font-size:10px;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px}}
+.gate-ring-wrap{{display:flex;align-items:center;gap:20px}}
+.ring-box{{position:relative;width:88px;height:88px;flex-shrink:0}}
+.ring-box svg{{transform:rotate(-90deg)}}
+.ring-box .pct{{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--gold);
+}}
+.gate-txt{{font-size:14px;line-height:1.5;color:{gcol};font-weight:500}}
+.gate-sub{{font-size:12px;color:var(--muted);margin-top:6px}}
+.exec-row{{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}}
+.exec-status{{
+  font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;
+  padding:6px 12px;border-radius:6px;background:rgba(0,0,0,.3);color:{ecol};
+  border:1px solid rgba(255,255,255,.06);
+}}
+.exec-meta{{font-size:12px;color:var(--muted)}}
+.exec-meta b{{color:var(--gold);font-weight:500}}
+.stats{{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;
+  margin-bottom:16px;animation:rise .6s .2s ease both;
+}}
+.stat{{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:16px 18px;transition:border-color .2s,transform .2s;
+}}
+.stat:hover{{border-color:rgba(201,162,39,.25);transform:translateY(-2px)}}
+.stat .k{{font-size:9px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}}
+.stat .v{{font-family:'JetBrains Mono',monospace;font-size:1.55rem;font-weight:600;line-height:1}}
+.stat .sub{{font-size:10px;color:var(--muted);margin-top:4px}}
+.table-card{{animation:rise .6s .3s ease both}}
+.table-wrap{{overflow-x:auto;margin-top:4px;border-radius:8px;border:1px solid var(--border)}}
 table{{width:100%;border-collapse:collapse;font-size:12px}}
-td,th{{padding:6px 8px;border-bottom:1px solid #1c2622;text-align:left}}
-th{{color:#5a6862;font-size:10px;letter-spacing:.1em;text-transform:uppercase}}
+th{{
+  padding:10px 14px;text-align:left;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);background:rgba(0,0,0,.25);
+  border-bottom:1px solid var(--border);
+}}
+td{{padding:11px 14px;border-bottom:1px solid rgba(26,36,32,.8)}}
+tr:last-child td{{border-bottom:none}}
+.trade-row{{opacity:0;animation:fadein .5s ease forwards}}
+.mono{{font-family:'JetBrains Mono',monospace;font-size:11px}}
+.dim{{color:var(--muted)}}
+.side-pill{{
+  display:inline-block;padding:3px 10px;border-radius:4px;font-size:10px;
+  font-weight:600;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;
+}}
+.side-long{{background:rgba(47,214,122,.12);color:var(--green);border:1px solid rgba(47,214,122,.25)}}
+.side-short{{background:rgba(240,82,82,.12);color:var(--red);border:1px solid rgba(240,82,82,.25)}}
+.sess{{font-size:11px;color:var(--muted);letter-spacing:.06em}}
+.badge{{
+  display:inline-block;padding:3px 9px;border-radius:4px;font-size:9px;
+  font-weight:700;letter-spacing:.1em;font-family:'JetBrains Mono',monospace;
+}}
+.badge-win{{background:rgba(47,214,122,.15);color:var(--green)}}
+.badge-loss{{background:rgba(240,82,82,.15);color:var(--red)}}
+.badge-be{{background:rgba(240,160,48,.15);color:var(--amber)}}
+.badge-open{{background:rgba(92,110,100,.15);color:var(--muted)}}
+.badge-clean{{background:rgba(47,214,122,.1);color:var(--green)}}
+.badge-breach{{background:rgba(240,82,82,.1);color:var(--red)}}
+.badge-muted{{background:rgba(92,110,100,.1);color:var(--muted)}}
+.r-val{{font-weight:600}}
+.empty{{text-align:center;padding:32px!important;color:var(--muted);font-style:italic}}
+footer{{
+  margin-top:20px;padding:16px 20px;border-radius:10px;
+  background:rgba(0,0,0,.25);border:1px solid var(--border);
+  font-size:11px;color:var(--muted);line-height:1.7;animation:rise .6s .4s ease both;
+}}
+footer code{{
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--gold-dim);
+  background:rgba(201,162,39,.08);padding:2px 6px;border-radius:3px;
+}}
+@keyframes rise{{from{{opacity:0;transform:translateY(16px)}}to{{opacity:1;transform:none}}}}
+@keyframes fadein{{from{{opacity:0;transform:translateX(-8px)}}to{{opacity:1;transform:none}}}}
+@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.35}}}}
 </style></head><body>
-<div class=card><div class=k>Funded readiness gate</div>
-<div style="color:{gcol};font-size:14px">{gtxt}</div><div class=bar><div class=fill></div></div></div>
-<div class=card><div class=k>Execution</div><div style="color:{ecol};font-size:14px">{estr} | risk {RISK_PCT}% on ${int(ACCOUNT_BALANCE)}</div></div>
-<div class=grid>
-<div class=card><div class=k>Record</div><div class=v>{st['wins']}W-{st['losses']}L-{st['be']}BE</div></div>
-<div class=card><div class=k>Win rate</div><div class=v style="color:{'#3ddc84' if st['wr']>GATE_WINRATE else '#ffb24d'}">{st['wr']}%</div></div>
-<div class=card><div class=k>Net R</div><div class=v style="color:{'#3ddc84' if st['totR']>=0 else '#ef5350'}">{st['totR']:+.2f}</div></div>
-<div class=card><div class=k>Streak</div><div class=v>{stk}</div></div>
-<div class=card><div class=k>Signals / Skips</div><div class=v>{st['signals']} / {st['skips']}</div></div>
-<div class=card><div class=k>Ungraded</div><div class=v style="color:{'#ef5350' if st['ungraded'] else '#3ddc84'}">{st['ungraded']}</div></div>
+<div class="wrap">
+<header>
+  <div class="brand">
+    <h1>TRADINGPOOL</h1>
+    <span>XAUUSD Signal Journal v3</span>
+  </div>
+  <div class="live-pill {'on' if live else 'off'}">
+    <span class="dot"></span>{estatus}
+  </div>
+</header>
+
+<div class="hero">
+  <div class="card">
+    <div class="lbl">Funded readiness gate</div>
+    <div class="gate-ring-wrap">
+      <div class="ring-box">
+        <svg width="88" height="88" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" fill="none" stroke="#1a2420" stroke-width="6"/>
+          <circle cx="50" cy="50" r="45" fill="none" stroke="{gcol}" stroke-width="6"
+            stroke-dasharray="{gate_ring} 283" stroke-linecap="round"
+            style="filter:drop-shadow(0 0 6px {gcol})"/>
+        </svg>
+        <div class="pct">{pct}%</div>
+      </div>
+      <div>
+        <div class="gate-txt">{gtxt}</div>
+        <div class="gate-sub">{GATE_TRADES} trades | WR &gt; {GATE_WINRATE}% | 0 breaches in last {GATE_CLEAN_WINDOW}</div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="lbl">Execution engine</div>
+    <div class="exec-row">
+      <span class="exec-status">{estr}</span>
+      <span class="exec-meta">Risk <b>{RISK_PCT}%</b> on <b>${int(ACCOUNT_BALANCE):,}</b> | Driver <b>{EXECUTION_DRIVER}</b></span>
+    </div>
+  </div>
 </div>
-<div class=card><div class=k>Last 30 trades</div>
-<table><tr><th>time (utc)</th><th>side</th><th>session</th><th>result</th><th>R</th><th>process</th></tr>{rows}</table></div>
-<div class=card style="color:#5a6862;font-size:11px">journal is ephemeral on free hosting - download via /export?secret=... |
-telegram: /stats /arm /disarm</div>
+
+<div class="stats">
+  <div class="stat"><div class="k">Record</div><div class="v">{st['wins']}W-{st['losses']}L-{st['be']}BE</div><div class="sub">{st['completed']} completed</div></div>
+  <div class="stat"><div class="k">Win rate</div><div class="v" style="color:{wr_col}">{st['wr']}%</div><div class="sub">target &gt; {GATE_WINRATE}%</div></div>
+  <div class="stat"><div class="k">Net R</div><div class="v" style="color:{r_col}">{st['totR']:+.2f}</div><div class="sub">cumulative</div></div>
+  <div class="stat"><div class="k">Streak</div><div class="v">{stk}</div><div class="sub">current run</div></div>
+  <div class="stat"><div class="k">Signals</div><div class="v">{st['signals']}</div><div class="sub">{st['skips']} skipped</div></div>
+  <div class="stat"><div class="k">Ungraded</div><div class="v" style="color:{u_col}">{st['ungraded']}</div><div class="sub">need CLEAN/BREACH</div></div>
+</div>
+
+<div class="card table-card">
+  <div class="lbl">Trade log (last 30)</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time UTC</th><th>Side</th><th>Session</th><th>Result</th><th>R</th><th>Process</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+</div>
+
+<footer>
+  Journal is ephemeral on free hosting - back up via <code>/export?secret=...</code><br>
+  Telegram commands: <code>/stats</code> <code>/arm</code> <code>/disarm</code>
+</footer>
+</div>
 </body></html>"""
     return html
 
