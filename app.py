@@ -317,231 +317,173 @@ def dashboard():
     st = build_stats()
     estr, live, _ = exec_status()
     pct = min(100, int(100 * st["completed"] / GATE_TRADES))
-    gcol = "#3ddc84" if st["gate_ok"] else "#ffb24d"
-    gtxt = "GATE MET - eligible to arm execution" if st["gate_ok"] else \
-        f"{st['completed']}/{GATE_TRADES} completed | {st['breaches_last']} breach(es) in last {GATE_CLEAN_WINDOW} | need WR>{GATE_WINRATE}%"
-    ecol = "#3ddc84" if live else "#ffb24d"
-    estatus = "LIVE" if live else ("ARMED" if is_armed() and st["gate_ok"] else "LOCKED")
-    stk = f"{abs(st['streak'])}{'W' if st['streak']>0 else 'L'}" if st["streak"] else "-"
-    wr_col = "#3ddc84" if st["wr"] > GATE_WINRATE else "#ffb24d"
-    r_col = "#3ddc84" if st["totR"] >= 0 else "#ef5350"
-    u_col = "#ef5350" if st["ungraded"] else "#3ddc84"
+    gate_ok = st["gate_ok"]
+    gtxt = "GATE MET - ELIGIBLE TO ARM" if gate_ok else f"INCOMPLETE - {st['completed']}/{GATE_TRADES} TRADES"
+    estatus = "LIVE" if live else ("ARMED" if is_armed() and gate_ok else "LOCKED")
+    stk = f"{abs(st['streak'])}{'W' if st['streak']>0 else 'L'}" if st["streak"] else "N/A"
+    wr_ok = st["wr"] > GATE_WINRATE
+    utc_now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    bar_fill = int(pct / 10)
+    bar = "#" * bar_fill + "-" * (10 - bar_fill)
     rows = ""
-    for i, t in enumerate(reversed(st["trades"][-30:])):
-        res = t["result"] or "open"
-        rc = {"win": "#3ddc84", "loss": "#ef5350", "be": "#ffb24d"}.get(res, "#5a6862")
-        rb = {"win": "badge-win", "loss": "badge-loss", "be": "badge-be"}.get(res, "badge-open")
-        side_cls = "side-long" if str(t["side"]).lower() == "long" else "side-short"
-        cl = "-" if t["clean"] is None else ("CLEAN" if t["clean"] else "BREACH")
-        cc = "badge-muted" if t["clean"] is None else ("badge-clean" if t["clean"] else "badge-breach")
-        rl = "" if t["realized"] is None else f"{t['realized']:+.2f}R"
-        delay = f"animation-delay:{i * 0.04}s"
-        rows += (f"<tr class='trade-row' style='{delay}'>"
-                 f"<td class='mono dim'>{t['time'][:16].replace('T',' ')}</td>"
-                 f"<td><span class='side-pill {side_cls}'>{t['side'].upper()}</span></td>"
-                 f"<td><span class='sess'>{t['session']}</span></td>"
-                 f"<td><span class='badge {rb}'>{res.upper()}</span></td>"
-                 f"<td class='mono r-val' style='color:{rc}'>{rl or '-'}</td>"
-                 f"<td><span class='badge {cc}'>{cl}</span></td></tr>")
+    for i, t in enumerate(reversed(st["trades"][-30:]), 1):
+        res = t["result"] or "OPEN"
+        res_cls = {"WIN": "c-pos", "LOSS": "c-neg", "BE": "c-warn", "OPEN": "c-dim"}.get(res.upper(), "c-dim")
+        side = str(t["side"]).upper()
+        side_cls = "c-pos" if side == "LONG" else "c-neg"
+        cl = "--" if t["clean"] is None else ("CLN" if t["clean"] else "BRC")
+        cl_cls = "c-dim" if t["clean"] is None else ("c-pos" if t["clean"] else "c-neg")
+        rl = "--" if t["realized"] is None else f"{t['realized']:+.2f}"
+        lat = t.get("latency", "") or "--"
+        rows += (f"<tr>"
+                 f"<td class='c-dim'>{i:02d}</td>"
+                 f"<td>{t['time'][:16].replace('T',' ')}</td>"
+                 f"<td class='c-amber'>XAU</td>"
+                 f"<td class='{side_cls}'>{side}</td>"
+                 f"<td>{t['session']}</td>"
+                 f"<td class='{res_cls}'>{res.upper()}</td>"
+                 f"<td class='{res_cls}'>{rl}</td>"
+                 f"<td class='{cl_cls}'>{cl}</td>"
+                 f"<td class='c-dim'>{lat}</td></tr>")
     if not rows:
-        rows = "<tr><td colspan='6' class='empty'>No trades yet. Waiting for first signal.</td></tr>"
-    gate_ring = int(283 * pct / 100)
+        rows = "<tr><td colspan='9' class='c-dim empty-row">&gt; NO TRADES IN BLOTTER. AWAITING SIGNAL.</td></tr>"
     html = f"""<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tradingpool Journal</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+<title>TRP | JOURNAL</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{{
-  --bg:#060908;--surface:#0c100e;--card:#101614;--border:#1a2420;
-  --text:#d8e4dc;--muted:#5c6e64;--gold:#c9a227;--gold-dim:#8a7020;
-  --green:#2fd67a;--red:#f05252;--amber:#f0a030;--glow:0 0 40px rgba(201,162,39,.08);
+  --bg:#000;--pnl:#0d0d0d;--pnl2:#141414;--line:#2a2a2a;--line2:#3d3d3d;
+  --amber:#ff9900;--amber2:#ffcc00;--txt:#c8c8c8;--white:#f0f0f0;
+  --pos:#00cc66;--neg:#ff4444;--warn:#ffaa00;--dim:#666;--cyan:#33bbff;
 }}
 *{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{height:100%}}
 body{{
-  font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--text);
-  min-height:100vh;overflow-x:hidden;
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%,rgba(201,162,39,.12),transparent),
-    radial-gradient(ellipse 60% 40% at 100% 100%,rgba(47,214,122,.06),transparent),
-    linear-gradient(rgba(26,36,32,.4) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(26,36,32,.4) 1px,transparent 1px);
-  background-size:auto,auto,48px 48px,48px 48px;
+  font-family:'IBM Plex Mono',Consolas,'Courier New',monospace;
+  font-size:11px;line-height:1.35;background:var(--bg);color:var(--txt);
+  display:flex;flex-direction:column;min-height:100vh;
 }}
-.wrap{{max-width:1100px;margin:0 auto;padding:28px 20px 48px}}
-header{{
-  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
-  margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid var(--border);
-  animation:rise .6s ease both;
+.topbar{{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+  background:var(--amber);color:#000;padding:3px 10px;font-weight:600;font-size:10px;
+  letter-spacing:.04em;border-bottom:2px solid var(--amber2);
 }}
-.brand{{display:flex;flex-direction:column;gap:4px}}
-.brand h1{{
-  font-size:clamp(1.6rem,4vw,2.2rem);font-weight:700;letter-spacing:.06em;
-  background:linear-gradient(135deg,var(--gold) 0%,#f0d878 50%,var(--gold-dim) 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+.topbar .logo{{font-size:12px;font-weight:700;letter-spacing:.12em}}
+.topbar .rt{{display:flex;gap:14px;flex-wrap:wrap}}
+.fnbar{{
+  display:flex;background:#1a1a1a;border-bottom:1px solid var(--line2);
+  font-size:10px;overflow-x:auto;
 }}
-.brand span{{font-size:11px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase}}
-.live-pill{{
-  display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;
-  font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
-  border:1px solid var(--border);background:var(--card);
+.fnbar span{{
+  padding:4px 12px;border-right:1px solid var(--line);color:var(--dim);white-space:nowrap;
 }}
-.live-pill.on{{border-color:rgba(47,214,122,.4);color:var(--green);box-shadow:0 0 20px rgba(47,214,122,.15)}}
-.live-pill.off{{color:var(--amber)}}
-.live-pill .dot{{width:7px;height:7px;border-radius:50%;background:currentColor}}
-.live-pill.on .dot{{animation:pulse 2s ease infinite}}
-.hero{{
-  display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;
-  animation:rise .6s .1s ease both;
+.fnbar span.on{{background:var(--pnl2);color:var(--amber);border-bottom:2px solid var(--amber)}}
+.main{{flex:1;padding:6px;display:grid;grid-template-rows:auto 1fr auto;gap:6px;min-height:0}}
+.panels{{display:grid;grid-template-columns:1fr 1fr;gap:6px}}
+@media(max-width:800px){{.panels{{grid-template-columns:1fr}}}}
+.pnl{{background:var(--pnl);border:1px solid var(--line2);display:flex;flex-direction:column;min-height:0}}
+.pnl-h{{
+  background:var(--pnl2);color:var(--amber);font-size:10px;font-weight:600;
+  padding:3px 8px;border-bottom:1px solid var(--line);letter-spacing:.1em;
+  display:flex;justify-content:space-between;
 }}
-@media(max-width:720px){{.hero{{grid-template-columns:1fr}}}}
-.card{{
-  background:linear-gradient(145deg,var(--card),var(--surface));
-  border:1px solid var(--border);border-radius:12px;padding:20px 22px;
-  box-shadow:var(--glow);position:relative;overflow:hidden;
-}}
-.card::before{{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(201,162,39,.35),transparent);
-}}
-.lbl{{font-size:10px;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px}}
-.gate-ring-wrap{{display:flex;align-items:center;gap:20px}}
-.ring-box{{position:relative;width:88px;height:88px;flex-shrink:0}}
-.ring-box svg{{transform:rotate(-90deg)}}
-.ring-box .pct{{
-  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--gold);
-}}
-.gate-txt{{font-size:14px;line-height:1.5;color:{gcol};font-weight:500}}
-.gate-sub{{font-size:12px;color:var(--muted);margin-top:6px}}
-.exec-row{{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}}
-.exec-status{{
-  font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;
-  padding:6px 12px;border-radius:6px;background:rgba(0,0,0,.3);color:{ecol};
-  border:1px solid rgba(255,255,255,.06);
-}}
-.exec-meta{{font-size:12px;color:var(--muted)}}
-.exec-meta b{{color:var(--gold);font-weight:500}}
-.stats{{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;
-  margin-bottom:16px;animation:rise .6s .2s ease both;
-}}
-.stat{{
-  background:var(--card);border:1px solid var(--border);border-radius:10px;
-  padding:16px 18px;transition:border-color .2s,transform .2s;
-}}
-.stat:hover{{border-color:rgba(201,162,39,.25);transform:translateY(-2px)}}
-.stat .k{{font-size:9px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}}
-.stat .v{{font-family:'JetBrains Mono',monospace;font-size:1.55rem;font-weight:600;line-height:1}}
-.stat .sub{{font-size:10px;color:var(--muted);margin-top:4px}}
-.table-card{{animation:rise .6s .3s ease both}}
-.table-wrap{{overflow-x:auto;margin-top:4px;border-radius:8px;border:1px solid var(--border)}}
-table{{width:100%;border-collapse:collapse;font-size:12px}}
+.pnl-b{{padding:8px;flex:1}}
+.row{{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dotted #222}}
+.row:last-child{{border-bottom:none}}
+.k{{color:var(--dim)}}
+.v{{color:var(--white);font-weight:500}}
+.c-amber{{color:var(--amber)}}
+.c-pos{{color:var(--pos)}}
+.c-neg{{color:var(--neg)}}
+.c-warn{{color:var(--warn)}}
+.c-dim{{color:var(--dim)}}
+.c-cyan{{color:var(--cyan)}}
+.bar{{color:var(--amber);letter-spacing:2px;font-weight:600}}
+.bar-dim{{color:#444}}
+.gate-ok{{color:var(--pos);font-weight:700}}
+.gate-no{{color:var(--warn);font-weight:700}}
+.exec-live{{color:var(--pos);animation:blink 1.2s step-end infinite}}
+.exec-off{{color:var(--warn)}}
+.blotter{{display:flex;flex-direction:column;min-height:0;flex:1}}
+.blotter .pnl-b{{padding:0;overflow:auto;flex:1}}
+table{{width:100%;border-collapse:collapse;font-size:10px}}
 th{{
-  padding:10px 14px;text-align:left;font-size:9px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--muted);background:rgba(0,0,0,.25);
-  border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:#1a1a1a;color:var(--amber);font-weight:600;
+  padding:4px 8px;text-align:left;border-bottom:1px solid var(--line2);
+  letter-spacing:.06em;font-size:9px;
 }}
-td{{padding:11px 14px;border-bottom:1px solid rgba(26,36,32,.8)}}
-tr:last-child td{{border-bottom:none}}
-.trade-row{{opacity:0;animation:fadein .5s ease forwards}}
-.mono{{font-family:'JetBrains Mono',monospace;font-size:11px}}
-.dim{{color:var(--muted)}}
-.side-pill{{
-  display:inline-block;padding:3px 10px;border-radius:4px;font-size:10px;
-  font-weight:600;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;
+td{{padding:3px 8px;border-bottom:1px solid #181818;white-space:nowrap}}
+tr:nth-child(even) td{{background:#0a0a0a}}
+tr:hover td{{background:#1a1a1a}}
+.empty-row{{text-align:center;padding:20px!important;letter-spacing:.08em}}
+.statusbar{{
+  display:flex;flex-wrap:wrap;gap:12px;padding:3px 10px;background:#1a1a1a;
+  border-top:1px solid var(--line2);font-size:9px;color:var(--dim);
 }}
-.side-long{{background:rgba(47,214,122,.12);color:var(--green);border:1px solid rgba(47,214,122,.25)}}
-.side-short{{background:rgba(240,82,82,.12);color:var(--red);border:1px solid rgba(240,82,82,.25)}}
-.sess{{font-size:11px;color:var(--muted);letter-spacing:.06em}}
-.badge{{
-  display:inline-block;padding:3px 9px;border-radius:4px;font-size:9px;
-  font-weight:700;letter-spacing:.1em;font-family:'JetBrains Mono',monospace;
-}}
-.badge-win{{background:rgba(47,214,122,.15);color:var(--green)}}
-.badge-loss{{background:rgba(240,82,82,.15);color:var(--red)}}
-.badge-be{{background:rgba(240,160,48,.15);color:var(--amber)}}
-.badge-open{{background:rgba(92,110,100,.15);color:var(--muted)}}
-.badge-clean{{background:rgba(47,214,122,.1);color:var(--green)}}
-.badge-breach{{background:rgba(240,82,82,.1);color:var(--red)}}
-.badge-muted{{background:rgba(92,110,100,.1);color:var(--muted)}}
-.r-val{{font-weight:600}}
-.empty{{text-align:center;padding:32px!important;color:var(--muted);font-style:italic}}
-footer{{
-  margin-top:20px;padding:16px 20px;border-radius:10px;
-  background:rgba(0,0,0,.25);border:1px solid var(--border);
-  font-size:11px;color:var(--muted);line-height:1.7;animation:rise .6s .4s ease both;
-}}
-footer code{{
-  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--gold-dim);
-  background:rgba(201,162,39,.08);padding:2px 6px;border-radius:3px;
-}}
-@keyframes rise{{from{{opacity:0;transform:translateY(16px)}}to{{opacity:1;transform:none}}}}
-@keyframes fadein{{from{{opacity:0;transform:translateX(-8px)}}to{{opacity:1;transform:none}}}}
-@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.35}}}}
+.statusbar b{{color:var(--amber);font-weight:500}}
+.statusbar .live{{color:var(--pos)}}
+@keyframes blink{{50%{{opacity:.3}}}}
 </style></head><body>
-<div class="wrap">
-<header>
-  <div class="brand">
-    <h1>TRADINGPOOL</h1>
-    <span>XAUUSD Signal Journal v3</span>
-  </div>
-  <div class="live-pill {'on' if live else 'off'}">
-    <span class="dot"></span>{estatus}
-  </div>
-</header>
-
-<div class="hero">
-  <div class="card">
-    <div class="lbl">Funded readiness gate</div>
-    <div class="gate-ring-wrap">
-      <div class="ring-box">
-        <svg width="88" height="88" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="45" fill="none" stroke="#1a2420" stroke-width="6"/>
-          <circle cx="50" cy="50" r="45" fill="none" stroke="{gcol}" stroke-width="6"
-            stroke-dasharray="{gate_ring} 283" stroke-linecap="round"
-            style="filter:drop-shadow(0 0 6px {gcol})"/>
-        </svg>
-        <div class="pct">{pct}%</div>
+<div class="topbar">
+  <span class="logo">TRADINGPOOL TERMINAL</span>
+  <span class="rt">
+    <span>XAUUSD</span><span>JOURNAL v3</span>
+    <span>UTC {utc_now}</span>
+    <span>EXEC: {estatus}</span>
+  </span>
+</div>
+<div class="fnbar">
+  <span class="on">F1 JOURNAL</span><span>F2 GATE</span><span>F3 EXEC</span>
+  <span>F4 BLOTTER</span><span>F5 EXPORT</span>
+</div>
+<div class="main">
+  <div class="panels">
+    <div class="pnl">
+      <div class="pnl-h"><span>GATE MONITOR</span><span class="{'gate-ok' if gate_ok else 'gate-no'}">{gtxt}</span></div>
+      <div class="pnl-b">
+        <div class="row"><span class="k">READINESS</span><span class="bar">[{bar}]</span><span class="c-amber"> {pct}%</span></div>
+        <div class="row"><span class="k">COMPLETED</span><span class="v">{st['completed']}/{GATE_TRADES}</span></div>
+        <div class="row"><span class="k">WIN RATE</span><span class="{'c-pos' if wr_ok else 'c-warn'}">{st['wr']}%</span><span class="k"> (REQ &gt;{GATE_WINRATE}%)</span></div>
+        <div class="row"><span class="k">NET R</span><span class="{'c-pos' if st['totR']>=0 else 'c-neg'}">{st['totR']:+.2f}</span></div>
+        <div class="row"><span class="k">RECORD</span><span class="v">{st['wins']}W {st['losses']}L {st['be']}BE</span></div>
+        <div class="row"><span class="k">STREAK</span><span class="v">{stk}</span></div>
+        <div class="row"><span class="k">BREACHES(L{GATE_CLEAN_WINDOW})</span><span class="{'c-neg' if st['breaches_last'] else 'c-pos'}">{st['breaches_last']}</span></div>
+        <div class="row"><span class="k">UNGRADED</span><span class="{'c-neg' if st['ungraded'] else 'c-pos'}">{st['ungraded']}</span></div>
+        <div class="row"><span class="k">SIGNALS/SKIP</span><span class="v">{st['signals']}/{st['skips']}</span></div>
       </div>
-      <div>
-        <div class="gate-txt">{gtxt}</div>
-        <div class="gate-sub">{GATE_TRADES} trades | WR &gt; {GATE_WINRATE}% | 0 breaches in last {GATE_CLEAN_WINDOW}</div>
+    </div>
+    <div class="pnl">
+      <div class="pnl-h"><span>EXECUTION DESK</span><span class="{'exec-live' if live else 'exec-off'}">{estr}</span></div>
+      <div class="pnl-b">
+        <div class="row"><span class="k">DRIVER</span><span class="c-cyan">{EXECUTION_DRIVER.upper()}</span></div>
+        <div class="row"><span class="k">STATUS</span><span class="{'exec-live' if live else 'c-warn'}">{estatus}</span></div>
+        <div class="row"><span class="k">ARMED</span><span class="{'c-pos' if is_armed() else 'c-dim'}">{'YES' if is_armed() else 'NO'}</span></div>
+        <div class="row"><span class="k">RISK PCT</span><span class="v">{RISK_PCT}%</span></div>
+        <div class="row"><span class="k">ACCOUNT</span><span class="v">${int(ACCOUNT_BALANCE):,}</span></div>
+        <div class="row"><span class="k">SYMBOL</span><span class="c-amber">{EXEC_SYMBOL}</span></div>
+        <div class="row"><span class="k">GATE LOCK</span><span class="{'c-pos' if gate_ok else 'c-neg'}">{'OPEN' if gate_ok else 'SEALED'}</span></div>
+        <div class="row"><span class="k">TRIPLE LOCK</span><span class="c-dim">DRIVER + ARM + GATE</span></div>
       </div>
     </div>
   </div>
-  <div class="card">
-    <div class="lbl">Execution engine</div>
-    <div class="exec-row">
-      <span class="exec-status">{estr}</span>
-      <span class="exec-meta">Risk <b>{RISK_PCT}%</b> on <b>${int(ACCOUNT_BALANCE):,}</b> | Driver <b>{EXECUTION_DRIVER}</b></span>
+  <div class="pnl blotter">
+    <div class="pnl-h"><span>TRADE BLOTTER</span><span class="c-dim">LAST {min(30, len(st['trades']))} POSITIONS</span></div>
+    <div class="pnl-b">
+      <table>
+        <thead><tr>
+          <th>#</th><th>TIME_UTC</th><th>SYM</th><th>SIDE</th><th>SESS</th>
+          <th>OUT</th><th>R_MULT</th><th>PROC</th><th>LAT_S</th>
+        </tr></thead>
+        <tbody>{rows}</tbody>
+      </table>
     </div>
   </div>
-</div>
-
-<div class="stats">
-  <div class="stat"><div class="k">Record</div><div class="v">{st['wins']}W-{st['losses']}L-{st['be']}BE</div><div class="sub">{st['completed']} completed</div></div>
-  <div class="stat"><div class="k">Win rate</div><div class="v" style="color:{wr_col}">{st['wr']}%</div><div class="sub">target &gt; {GATE_WINRATE}%</div></div>
-  <div class="stat"><div class="k">Net R</div><div class="v" style="color:{r_col}">{st['totR']:+.2f}</div><div class="sub">cumulative</div></div>
-  <div class="stat"><div class="k">Streak</div><div class="v">{stk}</div><div class="sub">current run</div></div>
-  <div class="stat"><div class="k">Signals</div><div class="v">{st['signals']}</div><div class="sub">{st['skips']} skipped</div></div>
-  <div class="stat"><div class="k">Ungraded</div><div class="v" style="color:{u_col}">{st['ungraded']}</div><div class="sub">need CLEAN/BREACH</div></div>
-</div>
-
-<div class="card table-card">
-  <div class="lbl">Trade log (last 30)</div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Time UTC</th><th>Side</th><th>Session</th><th>Result</th><th>R</th><th>Process</th></tr></thead>
-      <tbody>{rows}</tbody>
-    </table>
+  <div class="statusbar">
+    <span><b>MSG</b> JOURNAL EPHEMERAL ON FREE HOST - BACKUP /export?secret=...</span>
+    <span><b>TG</b> /stats /arm /disarm</span>
+    <span class="{'live' if live else ''}"><b>SYS</b> {'EXECUTION LIVE' if live else 'JOURNAL-ONLY MODE'}</span>
   </div>
-</div>
-
-<footer>
-  Journal is ephemeral on free hosting - back up via <code>/export?secret=...</code><br>
-  Telegram commands: <code>/stats</code> <code>/arm</code> <code>/disarm</code>
-</footer>
 </div>
 </body></html>"""
     return html
