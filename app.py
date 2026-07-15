@@ -95,10 +95,12 @@ def fetch_chart_png():
     try:
         r = requests.get("https://api.chart-img.com/v1/tradingview/advanced-chart",
                          params={"symbol": CHART_SYMBOL, "interval": CHART_INTERVAL,
-                                 "key": CHART_KEY, "width": 800, "height": 500,
-                                 "theme": "dark"}, timeout=30)
-        if r.status_code == 200:
+                                 "width": 800, "height": 500, "theme": "dark"},
+                         headers={"Authorization": f"Bearer {CHART_KEY}"},
+                         timeout=30)
+        if r.status_code == 200 and r.content:
             return r.content
+        print("chart-img error:", r.status_code, r.text[:200])
     except Exception as e:
         print("chart-img error:", e)
     return None
@@ -129,7 +131,10 @@ def send_signal(s):
                files={"photo": ("chart.png", png, "image/png")})
         if r is not None and r.ok:
             mid = r.json().get("result", {}).get("message_id")
-    else:
+        else:
+            print("telegram photo error:", getattr(r, "status_code", None),
+                  r.text[:200] if r is not None else "no response")
+    if mid is None:
         mid = tg_send(text, kb)
     s["message_id"] = mid
     with state_lock:
