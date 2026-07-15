@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, Response
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = str(os.environ["TELEGRAM_CHAT_ID"])
 SECRET = os.environ.get("WEBHOOK_SECRET", "")
-CHART_KEY = os.environ.get("CHART_IMG_KEY", "")
+CHART_KEY = os.environ.get("CHART_IMG_KEY", "").strip()
 CHART_SYMBOL = os.environ.get("CHART_SYMBOL", "OANDA:XAUUSD")
 CHART_INTERVAL = os.environ.get("CHART_INTERVAL", "5m")
 TG = f"https://api.telegram.org/bot{TOKEN}"
@@ -91,18 +91,25 @@ def tg_send(text, keyboard=None):
 
 def fetch_chart_png():
     if not CHART_KEY:
+        print("chart-img: CHART_IMG_KEY not set", flush=True)
         return None
-    try:
-        r = requests.get("https://api.chart-img.com/v1/tradingview/advanced-chart",
-                         params={"symbol": CHART_SYMBOL, "interval": CHART_INTERVAL,
-                                 "width": 800, "height": 500, "theme": "dark"},
-                         headers={"Authorization": f"Bearer {CHART_KEY}"},
-                         timeout=30)
-        if r.status_code == 200 and r.content:
-            return r.content
-        print("chart-img error:", r.status_code, r.text[:200])
-    except Exception as e:
-        print("chart-img error:", e)
+    params = {"symbol": CHART_SYMBOL, "interval": CHART_INTERVAL,
+              "width": 800, "height": 500, "theme": "dark", "format": "png"}
+    attempts = [
+        {"params": params, "headers": {"Authorization": f"Bearer {CHART_KEY}"}},
+        {"params": {**params, "key": CHART_KEY}, "headers": {}},
+    ]
+    url = "https://api.chart-img.com/v1/tradingview/advanced-chart"
+    for i, kw in enumerate(attempts, 1):
+        try:
+            r = requests.get(url, timeout=20, **kw)
+            ct = r.headers.get("content-type", "")
+            if r.status_code == 200 and r.content[:4] == b"\x89PNG":
+                print(f"chart-img: ok via attempt {i} ({len(r.content)} bytes)", flush=True)
+                return r.content
+            print(f"chart-img attempt {i}:", r.status_code, ct, r.text[:200], flush=True)
+        except Exception as e:
+            print(f"chart-img attempt {i} error:", e, flush=True)
     return None
 
 def ticket(s):
@@ -299,8 +306,17 @@ def webhook():
         payload = json.loads(raw)
     except Exception:
         payload = {"raw": raw}
-    send_signal(payload)
+    threading.Thread(target=send_signal, args=(payload,), daemon=True).start()
     return jsonify({"ok": True})
+
+@app.route("/test-chart")
+def test_chart():
+    if SECRET and request.args.get("secret") != SECRET:
+        return "forbidden", 403
+    png = fetch_chart_png()
+    if png:
+        return Response(png, mimetype="image/png")
+    return "chart fetch failed - check render logs", 500
 
 @app.route("/export")
 def export():
