@@ -346,7 +346,7 @@ def dashboard():
                  f"<td class='{cl_cls}'>{cl}</td>"
                  f"<td class='c-dim'>{lat}</td></tr>")
     if not rows:
-        rows = "<tr><td colspan='9' class='c-dim empty-row">&gt; NO TRADES IN BLOTTER. AWAITING SIGNAL.</td></tr>"
+        rows = '<tr><td colspan="9" class="c-dim empty-row">NO TRADES - AWAITING SIGNAL</td></tr>'
     html = f"""<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TRP | JOURNAL</title>
